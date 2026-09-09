@@ -1,5 +1,9 @@
 # NexusForge
 
+<p align="center">
+  <img src="nexusforge.png" alt="NexusForge logo" width="320">
+</p>
+
 NexusForge is a local multi-agent coding system designed for efficient software development on consumer hardware.
 
 It uses a larger language model as an **orchestrator** and smaller specialized models as parallel **implementation agents**.
