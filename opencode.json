@@ -1,0 +1,63 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "llama-main": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "NexusForge Main",
+      "options": {
+        "baseURL": "http://127.0.0.1:8080/v1"
+      },
+      "models": {
+        "qwen-local": {
+          "name": "Qwen3.5-9B Local",
+          "limit": {
+            "context": 16384,
+            "output": 4096
+          }
+        }
+      }
+    },
+
+    "llama-granite": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "NexusForge Granite",
+      "options": {
+        "baseURL": "http://127.0.0.1:8080/v1"
+      },
+      "models": {
+        "granite-local": {
+          "name": "Granite 4.2 3B Local",
+          "limit": {
+            "context": 32768,
+            "output": 4096
+          }
+        }
+      }
+    },
+
+    "llama-long": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "NexusForge Long Context",
+      "options": {
+        "baseURL": "http://127.0.0.1:8081/v1"
+      },
+      "models": {
+        "qwen3.5-4b-long": {
+          "name": "Qwen3.5 4B Long Context",
+          "limit": {
+            "context": 524288,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+
+  "model": "llama-main/qwen-local",
+  "agents": {
+    "coding-subagent": {
+      "autoStartOnRequest": true,
+      "cleanupMainAgentOnStart": true
+    }
+  }
+}
