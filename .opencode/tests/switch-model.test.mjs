@@ -14,7 +14,7 @@ async function setup(handler) {
   return (await SwitchModelPlugin({ client })).tool.switch_model
 }
 
-test("switches each supported target in the current session using the authenticated transport", async () => {
+test("switches each supported primary-session target using the authenticated transport", async () => {
   const requests = []
   const tool = await setup(async (request) => {
     requests.push({
@@ -34,11 +34,12 @@ test("switches each supported target in the current session using the authentica
   })
   assert.deepEqual(tool.args.model.options, [
     "llama-main/qwen3.5-9b-orchestrator",
-    "llama-granite/granite-4.2-3b-multi",
     "llama-granite/granite-4.2-8b-orchestrator",
     "llama-ornith/ornith-1.5-9b-orchestrator",
-    "llama-long/qwen3.5-4b-long-context",
   ])
+  assert.match(tool.description, /primary OpenCode session/)
+  assert.match(tool.description, /only when the user explicitly requests/)
+  assert.match(tool.description, /subagent-only models are selected by the Task tool/)
   for (const model of tool.args.model.options) {
     const result = await tool.execute({
       model,
@@ -79,11 +80,19 @@ test("switches each supported target in the current session using the authentica
     ))
     assert.ok(handoff.body.parts[0].text.includes("Extract the requested evidence"))
   }
-  assert.equal(requests.length, 15)
+  assert.equal(requests.length, 9)
 })
 
-test("rejects an unknown model or missing session before making a request", async () => {
+test("rejects subagent-only and unknown models or a missing session before making a request", async () => {
   const tool = await setup(() => assert.fail("No request expected"))
+  await assert.rejects(
+    tool.execute({ model: "llama-granite/granite-4.2-3b-multi" }, context),
+    /Unsupported/,
+  )
+  await assert.rejects(
+    tool.execute({ model: "llama-long/qwen3.5-4b-long-context" }, context),
+    /Unsupported/,
+  )
   await assert.rejects(tool.execute({ model: "external/unknown" }, context), /Unsupported/)
   await assert.rejects(
     tool.execute({ model: "llama-main/qwen3.5-9b-orchestrator" }, {}),
@@ -107,7 +116,7 @@ test("reports API errors and rejects an HTML fallback", async () => {
       ? new Response("<html>Not an API route</html>", { status, headers: { "Content-Type": "text/html" } })
       : Response.json({ message: "Switch rejected" }, { status }))
     await assert.rejects(
-      tool.execute({ model: "llama-granite/granite-4.2-3b-multi", reason: "Test" }, context),
+      tool.execute({ model: "llama-granite/granite-4.2-8b-orchestrator", reason: "Test" }, context),
       new RegExp(`Model switch failed \\(HTTP ${status}\\)`),
     )
   }
@@ -144,7 +153,7 @@ test("does not start a temporary handoff if the original model cannot be recorde
   })
   await assert.rejects(
     tool.execute({
-      model: "llama-long/qwen3.5-4b-long-context",
+      model: "llama-ornith/ornith-1.5-9b-orchestrator",
       reason: "Read a long file",
       temporary: true,
     }, context),

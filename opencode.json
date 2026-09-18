@@ -93,7 +93,8 @@
       "permission": {
         "task": {
           "*": "deny",
-          "granite-multi": "allow"
+          "granite-multi": "allow",
+          "long-context": "allow"
         }
       }
     },
@@ -104,7 +105,8 @@
       "permission": {
         "task": {
           "*": "deny",
-          "granite-multi": "allow"
+          "granite-multi": "allow",
+          "long-context": "allow"
         }
       }
     },
@@ -115,7 +117,8 @@
       "permission": {
         "task": {
           "*": "deny",
-          "granite-multi": "allow"
+          "granite-multi": "allow",
+          "long-context": "allow"
         }
       }
     },
@@ -126,6 +129,18 @@
       "prompt": "Work only on the assigned Task Markdown. Read it before acting, respect its owned paths and constraints, run its validation, and report changed files, checks, and blockers. Do not delegate further.",
       "permission": {
         "task": "deny"
+      }
+    },
+    "long-context": {
+      "description": "Reads one oversized source and returns focused findings with evidence locations",
+      "mode": "subagent",
+      "model": "llama-long/qwen3.5-4b-long-context",
+      "prompt": "Read only the source identified in the assigned prompt and extract the requested information with useful headings, page numbers, or line numbers. Report findings, uncertainties, missing information, and blockers. Do not edit files, perform final synthesis, delegate, or call switch_model.",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "switch_model": "deny"
       }
     }
   }

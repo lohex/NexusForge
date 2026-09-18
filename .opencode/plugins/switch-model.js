@@ -3,10 +3,8 @@ import { tool } from "@opencode-ai/plugin"
 // These are OpenCode provider/model IDs; the router receives only the model ID.
 const models = [
   "llama-main/qwen3.5-9b-orchestrator",
-  "llama-granite/granite-4.2-3b-multi",
   "llama-granite/granite-4.2-8b-orchestrator",
   "llama-ornith/ornith-1.5-9b-orchestrator",
-  "llama-long/qwen3.5-4b-long-context",
 ]
 
 async function getCurrentModel(transport, sessionID, signal) {
@@ -32,9 +30,10 @@ export const SwitchModelPlugin = async ({ client }) => ({
   tool: {
     switch_model: tool({
       description:
-        "Switch the current OpenCode session to a local NexusForge model for subsequent model calls. " +
-        "Use when the user requests a model change or a loaded skill directs it. " +
-        "IDs state each model's role: orchestrator, multi-agent implementation, or long context. " +
+        "Switch the primary OpenCode session to a local NexusForge primary-session model for subsequent model calls. " +
+        "Use only when the user explicitly requests a primary-session model change. " +
+        "This tool changes only the primary-session model; subagent-only models are selected by the Task tool from the chosen subagent configuration. " +
+        "Only orchestrator models are valid targets. " +
         "The conversation is retained; before switching to a smaller context window, compact it if needed. " +
         "The llama.cpp router must be running and handles loading on the next request. " +
         "Avoid repeatedly switching models within the same task.",
@@ -58,7 +57,7 @@ export const SwitchModelPlugin = async ({ client }) => ({
         // model-switch route belongs to V2 and is not on client.session.
         const transport = client?._client
         if (typeof transport?.post !== "function") {
-          throw new Error("switch_model requires the OpenCode 1.18.30 plugin client transport.")
+          throw new Error("switch_model requires the OpenCode 1.18.x plugin client transport.")
         }
 
         const previousModel = await getCurrentModel(transport, context.sessionID, context.abort)

@@ -40,14 +40,16 @@ repository root without depending on the current working directory.
 | Qwen3.5 9B | `llama-main/qwen3.5-9b-orchestrator` | 16K | default orchestrator |
 | Ornith 1.5 9B | `llama-ornith/ornith-1.5-9b-orchestrator` | 128K | long-context reasoning orchestrator |
 | Granite 4.2 8B | `llama-granite/granite-4.2-8b-orchestrator` | 16K | optional orchestrator |
-| Qwen3.5 4B | `llama-long/qwen3.5-4b-long-context` | 512K | long documents and files |
-| Granite 4.2 3B | `llama-granite/granite-4.2-3b-multi` | 32K per slot | lightweight parallel implementation |
+| Qwen3.5 4B | `llama-long/qwen3.5-4b-long-context` | 512K | subagent-only large-source extraction |
+| Granite 4.2 3B | `llama-granite/granite-4.2-3b-multi` | 32K per slot | subagent-only parallel implementation |
 
 The role suffixes are intentional: `-orchestrator` models own planning and
 integration, `-long-context` is used for large-source extraction, and `-multi`
-models execute small bounded tasks. Granite 3B uses two 32K slots by default.
-Qwen Long Context keeps its quantized KV cache in system RAM to make the 512K
-context practical on an 8 GB GPU.
+models execute small bounded tasks. Granite 3B uses three 32K subagent slots by
+default and is never selected as the primary-session model.
+Qwen Long Context is likewise selected only through its `long-context` subagent.
+It keeps its quantized KV cache in system RAM to make the 512K context practical
+on an 8 GB GPU.
 
 ## Installation
 
@@ -93,7 +95,7 @@ In a second terminal, start OpenCode with a configured orchestrator profile:
 
 `opencode.sh` uses the project-local OpenCode installation and enables Exa web
 search for the local providers. Use `/models` inside OpenCode for an interactive
-model change, or let the `switch_model` tool perform the change for an agent.
+primary-session model change, or let the `switch_model` tool perform that change.
 The `qwen-orchestrator` profile is the default primary agent; use the Tab key to
 select the Ornith or optional Granite orchestrator profiles interactively.
 
@@ -139,10 +141,13 @@ ORNITH_REASONING_BUDGET=2048 ./serving/serve_ornith.sh
 ## Automatic model switching
 
 [.opencode/plugins/switch-model.js](.opencode/plugins/switch-model.js) exposes
-the `switch_model` tool. It changes the model for the current OpenCode session
-while retaining the conversation. Supported arguments are:
+the `switch_model` tool. It changes the primary-session model while retaining
+the conversation. Subagent-only models such as Granite 3B and Qwen Long Context
+are intentionally not valid targets; the Task tool selects those from the
+subagent configuration.
+Supported arguments are:
 
-- `model`: one of the five configured provider/model IDs;
+- `model`: one of the three allowed orchestrator provider/model IDs;
 - `reason`: a short explanation for the switch;
 - `temporary`: require the current model to be recorded for a later return;
 - `handoff`: task context or extracted findings for the target model.
@@ -176,31 +181,36 @@ ownership boundaries, and final validation. Each small independent task gets a
 self-contained Task Markdown that links back to the plan and specifies exact
 paths, constraints, acceptance criteria, and checks.
 
-For delegated work, the orchestrator uses `switch_model` to load
-`llama-granite/granite-4.2-3b-multi`, invokes the configured `granite-multi`
-subagent once per Task Markdown, and runs at most two independent tasks at once
-with the default server preset. After collecting the results, it switches back
-to the recorded orchestrator model for integration and final review. Cohesive or
+For delegated work, the orchestrator invokes the configured `granite-multi`
+subagent directly through one Task call per Task Markdown. Independent calls are
+issued in the same assistant turn so up to three Granite child sessions can run
+concurrently with the router preset. OpenCode selects
+`llama-granite/granite-4.2-3b-multi` from the subagent definition; the primary
+session never switches models. The original orchestrator performs architecture,
+review, integration, cross-cutting edits, and final validation. Cohesive or
 overlapping work stays with the orchestrator.
 
-## Qwen long-context skill
+## Long-context skill
 
-[.opencode/skills/qwen-long-context/SKILL.md](.opencode/skills/qwen-long-context/SKILL.md)
+[.opencode/skills/long-context/SKILL.md](.opencode/skills/long-context/SKILL.md)
 handles documents or files that exceed the useful context of the current model.
 Its workflow is:
 
 1. Validate the canonical launcher with
    `serving/serve_qwen_long_context.sh --check`.
-2. Record the original model and switch to
-   `llama-long/qwen3.5-4b-long-context`.
-3. Read the requested source and extract only the information needed by the
-   triggering task.
-4. Hand the findings back and return to the recorded original model.
+2. Emit `Task(subagent_type="long-context", ...)` with the source location and
+   one precise extraction request.
+3. Let the child session read the source with its configured
+   `llama-long/qwen3.5-4b-long-context` model.
+4. Review the returned findings and perform synthesis in the unchanged primary
+   orchestrator session.
 
 `serving/serve_qwen_long_context.sh` is the canonical replacement for the old
 `serve_qwen_long_context_new.sh` name. During a router-backed OpenCode session,
 the skill uses only its `--check` mode: starting the standalone server would
-compete with the router for port 8080 and prevent a reliable return switch.
+compete with the router for port 8080. The router loads Qwen for the child request
+and reloads the primary orchestrator model for the next parent inference; the
+primary session's configured model never changes.
 
 Restart OpenCode after changing or installing a plugin or skill because these
 files are loaded during startup.
@@ -239,6 +249,13 @@ Run the model-switch plugin tests:
 
 ```bash
 node .opencode/tests/switch-model.test.mjs
+```
+
+Run the subagent workflow tests:
+
+```bash
+node .opencode/tests/orchestrator-workflow.test.mjs
+node .opencode/tests/long-context-workflow.test.mjs
 ```
 
 Run the Granite 3B multi-agent A/B benchmark. It starts each test server,

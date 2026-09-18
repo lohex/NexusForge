@@ -1,0 +1,14 @@
+[
+  {
+    "title": "Test Doc",
+    "url": "https://example.com/test",
+    "location": "test.html",
+    "text": "Test content"
+  },
+  {
+    "title": "Another Page",
+    "url": "https://example.com/another",
+    "location": "another.html",
+    "text": "Another page content"
+  }
+]

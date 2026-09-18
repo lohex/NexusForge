@@ -1,6 +1,6 @@
 ---
 name: orchestrator
-description: Plan and coordinate non-trivial implementation work with a local orchestrator model. Create a durable implementation-plan Markdown file, split independent small work into precise Task Markdown files, delegate those files to Granite multi subagents after loading the multi model with switch_model, then review and integrate the results.
+description: Plan and coordinate non-trivial implementation work with a local orchestrator model. Create a durable implementation-plan Markdown file, split independent small work into precise Task Markdown files, delegate those files directly to Granite multi subagents while preserving the primary orchestrator model, then review and integrate the results.
 metadata:
   workflow: local-multi-agent
   artifacts: markdown
@@ -13,8 +13,11 @@ from multiple independent implementation tasks. The orchestrator owns the
 architecture, interfaces, task boundaries, integration, and final validation.
 Do not delegate a task merely to create parallel work.
 
-This workflow requires the NexusForge llama.cpp router, the `switch_model` tool,
-and the configured `granite-multi` subagent.
+This workflow requires the NexusForge llama.cpp router and the configured
+`granite-multi` subagent. The primary session remains on its current
+orchestrator agent and model throughout delegation. For example, an
+`ornith-orchestrator` session remains an `ornith-orchestrator` session before,
+during, and after Granite tasks run.
 
 ## 1. Plan before implementation
 
@@ -40,10 +43,23 @@ the design.
 
 ## 2. Decide what to delegate
 
+The Granite multi subagents are less capable than the primary orchestrator.
+Treat them as focused execution workers, not as planners or substitutes for the
+primary model's reasoning. Give each subagent a narrow assignment with an
+already-decided interface, explicit steps, limited file ownership, and an
+unambiguous validation target.
+
 Delegate only small, bounded tasks that have a clear result and can be completed
 without redesigning the plan. Suitable tasks include a self-contained module,
 focused refactor, tests for an agreed interface, documentation, or an independent
 diagnostic investigation.
+
+If a candidate task contains multiple objectives, requires choices between
+architectures, spans unrelated paths, or combines investigation, implementation,
+integration, and review, split it into multiple Task Markdown files first. Make
+dependencies explicit and dispatch only the parts whose prerequisites and
+interfaces are already settled. Prefer several small sequential tasks over one
+large ambiguous task, even when that reduces parallelism.
 
 Keep architecture decisions, cross-cutting changes, overlapping file ownership,
 integration, and final review with the orchestrator. If work cannot be divided
@@ -69,36 +85,48 @@ Each Task Markdown must include:
 
 Task files must be independently understandable after reading the linked plan.
 Do not assign two concurrent tasks ownership of the same file. Do not ask a
-subagent to infer requirements that the orchestrator can state explicitly.
+subagent to infer requirements that the orchestrator can state explicitly. If
+the objective cannot be explained precisely in one bounded Task Markdown, split
+it again before dispatching it.
 
-## 4. Load the multi model and dispatch
+## 4. Emit Task calls, then let the router load Granite
 
-When at least one Task Markdown is ready, call `switch_model` once with:
+While the primary orchestrator model is still active, emit one Task tool call for
+each ready Task Markdown:
 
-- `model`: `llama-granite/granite-4.2-3b-multi`
-- `temporary`: `true`
-- `reason`: implementation of the prepared bounded tasks
-- `handoff`: the implementation-plan path, every ready Task Markdown path,
-  their dependency order, and the instruction to return to the recorded previous
-  orchestrator model after all task results are collected
+`Task(subagent_type="granite-multi", ...)`
 
-In the continuation, use the Task tool to invoke the `granite-multi` subagent.
+For dependency-free tasks, emit all independent Task calls in the same assistant
+turn, up to the three Granite server slots. This is the last action the primary
+model takes before OpenCode starts the child work; do not wait for one independent
+task to finish before emitting the others.
+
 The dispatch prompt must name exactly one Task Markdown path and tell the
 subagent to read that file and its linked implementation plan before acting.
 Do not duplicate or weaken the Task Markdown requirements in the prompt.
 
-Run only dependency-free tasks concurrently, with no more concurrent tasks than
-the active Granite server slots. The default preset provides two slots. Run
-dependent tasks only after their prerequisites have been reviewed.
+After the primary model has emitted the Task calls, OpenCode executes them and
+creates a child session for each call. Each child uses the model configured on
+the selected subagent, so its first inference requests
+`llama-granite/granite-4.2-3b-multi`. At that point the one-model-at-a-time router
+unloads the physically active orchestrator model and loads Granite. The primary
+session itself is only waiting for tool results: its agent and configured model
+do not change, and it cannot perform model inference concurrently with Granite.
 
-## 5. Return, integrate, and verify
+The Granite child sessions can use the three Granite slots concurrently. After
+all Task results for the turn have returned, OpenCode resumes the unchanged
+primary session. Its next inference still requests the original orchestrator
+model, causing the router to unload Granite and reload that model automatically.
+Do not call `switch_model` before or after Granite delegation; the router swaps
+the physically loaded model in response to child and parent inference requests.
 
-Collect each subagent's report and inspect its actual changes. Then call
-`switch_model` with the exact previous orchestrator model recorded in the
-synthetic handoff, `temporary: false`, and a compact handoff containing task
-outcomes, changed paths, validation results, and unresolved issues.
+Run dependent tasks only after their prerequisites have returned and the primary
+orchestrator has been reloaded to review them.
 
-Back in the orchestrator model:
+## 5. Review, integrate, and verify in the primary session
+
+Collect each subagent's report and inspect its actual changes in the unchanged
+primary orchestrator session:
 
 1. Check every result against its Task Markdown and the implementation plan.
 2. Resolve integration issues and perform any cross-cutting edits directly.
@@ -107,6 +135,5 @@ Back in the orchestrator model:
 5. Report the plan path, material changes, validation, and any open risks to the
    user.
 
-If `switch_model` or a delegated task fails, record the failure in the plan and
-continue with the safe work that remains. Do not retry model switches or failing
-subagents in a loop.
+If a delegated task fails, record the failure in the plan and continue with the
+safe work that remains. Do not retry failing subagents in a loop.
