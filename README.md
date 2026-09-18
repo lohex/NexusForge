@@ -4,58 +4,264 @@
   <img src="nexusforge.png" alt="NexusForge logo" width="320">
 </p>
 
-NexusForge is a local multi-agent coding system designed for efficient software development on consumer hardware.
+NexusForge is a local OpenCode environment for running several specialized
+language models on consumer hardware. The current setup targets an NVIDIA GPU
+with 8 GB VRAM and uses llama.cpp as an OpenAI-compatible inference server.
 
-It uses a larger language model as an **orchestrator** and smaller specialized models as parallel **implementation agents**.
+The llama.cpp router keeps at most one model in VRAM. OpenCode can therefore
+retain one conversation while switching between coding, reasoning, and
+long-context models.
 
-## Architecture
+## Repository layout
 
 ```text
-User
-  │
-  ▼
-Qwen3.5-9B
-Orchestrator
-  │
-  ├── Granite 4.2 3B → implementation task A
-  ├── Granite 4.2 3B → implementation task B
-  │
-  ▼
-Qwen3.5-9B
-Review and integration
+NexusForge/
+├── installations/       model, llama.cpp, and OpenCode installers
+├── serving/             router and standalone serving scripts
+├── config/              llama.cpp router and long-context settings
+├── models/              downloaded GGUF models
+├── llama.cpp/           local llama.cpp checkout and build
+├── .opencode/
+│   ├── plugins/         switch_model plugin
+│   ├── skills/          OpenCode skills
+│   └── tests/           plugin tests
+├── opencode.json        local provider and model definitions
+└── opencode.sh          project-local OpenCode launcher with Exa enabled
 ```
 
-The orchestrator is responsible for:
+Installation and serving scripts resolve the repository root from their own
+location. They can therefore be invoked through an absolute path or from the
+repository root without depending on the current working directory.
 
-* understanding the repository and user request
-* decomposing work into independent tasks
-* defining interfaces and constraints
-* assigning tasks to implementation agents
-* reviewing and integrating their results
+## Models
 
-The implementation agents focus on narrowly scoped coding tasks such as feature implementation, refactoring, testing, and debugging.
+| Model | OpenCode ID | Context | Intended use |
+|---|---|---:|---|
+| Qwen3.5 9B | `llama-main/qwen3.5-9b-orchestrator` | 16K | default orchestrator |
+| Ornith 1.5 9B | `llama-ornith/ornith-1.5-9b-orchestrator` | 128K | long-context reasoning orchestrator |
+| Granite 4.2 8B | `llama-granite/granite-4.2-8b-orchestrator` | 16K | optional orchestrator |
+| Qwen3.5 4B | `llama-long/qwen3.5-4b-long-context` | 512K | long documents and files |
+| Granite 4.2 3B | `llama-granite/granite-4.2-3b-multi` | 32K per slot | lightweight parallel implementation |
 
-## Initial Setup
+The role suffixes are intentional: `-orchestrator` models own planning and
+integration, `-long-context` is used for large-source extraction, and `-multi`
+models execute small bounded tasks. Granite 3B uses two 32K slots by default.
+Qwen Long Context keeps its quantized KV cache in system RAM to make the 512K
+context practical on an 8 GB GPU.
 
-The initial configuration targets an NVIDIA GPU with 8 GB VRAM:
+## Installation
 
-* **Orchestrator:** Qwen3.5-9B, Q4_K_M
-* **Implementers:** Granite 4.2 3B, Q4_K_M
-* **Inference:** llama.cpp / llama-server
-* **Agent interface:** OpenCode
-* **Development environment:** VS Code
+The main installer sets up the project-local Hugging Face CLI and OpenCode,
+downloads Qwen3.5 9B and Granite 3B, builds llama.cpp with CUDA, and keeps its
+caches below the repository:
 
-Multiple Granite agents can share the same loaded model while operating in separate contexts and Git worktrees.
+```bash
+./installations/install.sh
+```
+
+Install optional models separately:
+
+```bash
+./installations/install_granite_8b.sh
+./installations/install_ornith.sh
+./installations/install_qwen_long_context.sh
+./installations/install_gemma4-26B-a4b.sh
+```
+
+The installers are resumable and skip model files that already pass their size
+or checksum validation. Gemma 4 26B A4B is currently an optional standalone
+experiment and is not registered in the OpenCode router configuration.
+
+## Recommended operation: router plus OpenCode
+
+Stop any standalone llama-server using port 8080, then start the router:
+
+```bash
+./serving/serve_router.sh
+```
+
+The router reads [config/router-models.ini](config/router-models.ini), loads
+models on demand, and unloads the previous model when another one is requested.
+It exposes all configured models through `http://127.0.0.1:8080/v1` while
+keeping at most one model loaded.
+
+In a second terminal, start OpenCode with a configured orchestrator profile:
+
+```bash
+./opencode.sh --agent ornith-orchestrator
+```
+
+`opencode.sh` uses the project-local OpenCode installation and enables Exa web
+search for the local providers. Use `/models` inside OpenCode for an interactive
+model change, or let the `switch_model` tool perform the change for an agent.
+The `qwen-orchestrator` profile is the default primary agent; use the Tab key to
+select the Ornith or optional Granite orchestrator profiles interactively.
+
+Inspect the router without loading a model:
+
+```bash
+curl -s http://127.0.0.1:8080/models
+```
+
+Loading another model and rebuilding its prompt cache takes time. Wait for an
+active response to finish before manually switching. Compact a long conversation
+before moving to a model whose context window is smaller than the conversation.
+
+## Model router configuration
+
+Each section in [config/router-models.ini](config/router-models.ini) matches the
+model ID portion used in [opencode.json](opencode.json). The total context in a
+router preset is divided between its parallel slots and must remain consistent
+with the corresponding OpenCode limit.
+
+To experiment with three Granite 3B instances at 32K each, change its preset to:
+
+```ini
+parallel = 3
+ctx-size = 98304
+cache-type-k = q4_0
+cache-type-v = q4_0
+```
+
+Restart the router after changing a preset. Three large contexts can still be
+tight on an 8 GB card, so actual capacity depends on GPU offload and runtime
+overhead.
+
+The Ornith preset uses a 4096-token reasoning budget and passes
+`reasoning_effort: medium` to the chat template as a soft effort target. The
+standalone launcher accepts a different hard budget through an environment
+variable:
+
+```bash
+ORNITH_REASONING_BUDGET=2048 ./serving/serve_ornith.sh
+```
+
+## Automatic model switching
+
+[.opencode/plugins/switch-model.js](.opencode/plugins/switch-model.js) exposes
+the `switch_model` tool. It changes the model for the current OpenCode session
+while retaining the conversation. Supported arguments are:
+
+- `model`: one of the five configured provider/model IDs;
+- `reason`: a short explanation for the switch;
+- `temporary`: require the current model to be recorded for a later return;
+- `handoff`: task context or extracted findings for the target model.
+
+For example:
+
+> Use `switch_model` to switch to
+> `llama-granite/granite-4.2-8b-orchestrator`, then
+> continue with this task.
+
+The plugin changes the OpenCode session. The router remains responsible for
+loading and unloading the corresponding llama.cpp process.
+
+## Orchestrator skill
+
+[.opencode/skills/orchestrator/SKILL.md](.opencode/skills/orchestrator/SKILL.md)
+defines the planning and delegation workflow for the three `-orchestrator`
+models. It requires the orchestrator to create a durable plan before
+implementation:
+
+```text
+plans/<task-slug>/
+├── implementation-plan.md
+└── tasks/
+    ├── T01-<task-slug>.md
+    └── T02-<task-slug>.md
+```
+
+The implementation plan records the architecture, interfaces, task graph,
+ownership boundaries, and final validation. Each small independent task gets a
+self-contained Task Markdown that links back to the plan and specifies exact
+paths, constraints, acceptance criteria, and checks.
+
+For delegated work, the orchestrator uses `switch_model` to load
+`llama-granite/granite-4.2-3b-multi`, invokes the configured `granite-multi`
+subagent once per Task Markdown, and runs at most two independent tasks at once
+with the default server preset. After collecting the results, it switches back
+to the recorded orchestrator model for integration and final review. Cohesive or
+overlapping work stays with the orchestrator.
+
+## Qwen long-context skill
+
+[.opencode/skills/qwen-long-context/SKILL.md](.opencode/skills/qwen-long-context/SKILL.md)
+handles documents or files that exceed the useful context of the current model.
+Its workflow is:
+
+1. Validate the canonical launcher with
+   `serving/serve_qwen_long_context.sh --check`.
+2. Record the original model and switch to
+   `llama-long/qwen3.5-4b-long-context`.
+3. Read the requested source and extract only the information needed by the
+   triggering task.
+4. Hand the findings back and return to the recorded original model.
+
+`serving/serve_qwen_long_context.sh` is the canonical replacement for the old
+`serve_qwen_long_context_new.sh` name. During a router-backed OpenCode session,
+the skill uses only its `--check` mode: starting the standalone server would
+compete with the router for port 8080 and prevent a reliable return switch.
+
+Restart OpenCode after changing or installing a plugin or skill because these
+files are loaded during startup.
+
+## Standalone serving
+
+The scripts in `serving/` can run individual models without the router:
+
+```bash
+./serving/serve_qwen.sh
+./serving/serve_granite_3b_multi.sh
+./serving/serve_granite_8b.sh
+./serving/serve_ornith.sh
+./serving/serve_qwen_long_context.sh
+./serving/serve_geamm4_26_B_A4B.sh
+```
+
+Do not run a standalone server on port 8080 at the same time as the router.
+Automatic model switching requires router mode.
+
+## Validation
+
+Check all shell scripts without starting a server:
+
+```bash
+for script in installations/*.sh serving/*.sh; do bash -n "$script"; done
+```
+
+Validate the long-context installation:
+
+```bash
+./serving/serve_qwen_long_context.sh --check
+```
+
+Run the model-switch plugin tests:
+
+```bash
+node .opencode/tests/switch-model.test.mjs
+```
+
+Run the Granite 3B multi-agent A/B benchmark. It starts each test server,
+executes three repetitions with one main-agent request and two concurrent
+background-agent requests, prints every response, and stops the server again:
+
+```bash
+python3 benchmarks/granite_multi_ab.py
+```
+
+Add the potentially VRAM-heavy three-slot Q8 variant with:
+
+```bash
+python3 benchmarks/granite_multi_ab.py --include-three-slot-q8
+```
+
+Port 8080 must be free. Use `--reasoning-effort none` when the benchmark should
+measure visible implementation output without spending tokens on reasoning.
 
 ## Goals
 
-NexusForge explores whether a relatively capable local orchestrator can coordinate multiple lightweight coding agents efficiently enough to provide a practical fully local software-engineering workflow.
-
-Planned areas include:
-
-* parallel task execution
-* Git worktree isolation
-* automated testing
-* structured task delegation
-* model switching based on task complexity
-* integration and review by the orchestrator
+NexusForge explores whether capable local models can coordinate specialized,
+lightweight coding agents efficiently enough for a practical fully local
+software-engineering workflow. Planned areas include parallel implementation,
+Git worktree isolation, automated testing, structured delegation, dynamic model
+selection, and final review by the orchestrator.

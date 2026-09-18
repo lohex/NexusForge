@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 MODEL_DIR="${PROJECT_HOME}/models/qwen-long-context"
 

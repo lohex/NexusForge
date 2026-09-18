@@ -32,7 +32,7 @@ set -euo pipefail
 # Configuration
 # ------------------------------------------------------------
 
-PROJECT_HOME="$(pwd -P)"
+PROJECT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 MODELS_DIR="${PROJECT_HOME}/models"
 QWEN_DIR="${MODELS_DIR}/qwen"

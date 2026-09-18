@@ -1,0 +1,7 @@
+.tools/
+.cache/
+.local/
+models/*
+!models/.gitkeep
+llama.cpp/
+__pycache__/

@@ -8,8 +8,8 @@
         "baseURL": "http://127.0.0.1:8080/v1"
       },
       "models": {
-        "qwen-local": {
-          "name": "Qwen3.5-9B Local",
+        "qwen3.5-9b-orchestrator": {
+          "name": "Qwen3.5 9B Orchestrator",
           "limit": {
             "context": 16384,
             "output": 4096
@@ -25,11 +25,18 @@
         "baseURL": "http://127.0.0.1:8080/v1"
       },
       "models": {
-        "granite-local": {
-          "name": "Granite 4.2 3B Local",
+        "granite-4.2-3b-multi": {
+          "name": "Granite 4.2 3B Multi",
           "limit": {
             "context": 32768,
             "output": 4096
+          }
+        },
+        "granite-4.2-8b-orchestrator": {
+          "name": "Granite 4.2 8B Orchestrator",
+          "limit": {
+            "context": 16384,
+            "output": 8192
           }
         }
       }
@@ -39,10 +46,10 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "NexusForge Long Context",
       "options": {
-        "baseURL": "http://127.0.0.1:8081/v1"
+        "baseURL": "http://127.0.0.1:8080/v1"
       },
       "models": {
-        "qwen3.5-4b-long": {
+        "qwen3.5-4b-long-context": {
           "name": "Qwen3.5 4B Long Context",
           "limit": {
             "context": 524288,
@@ -50,14 +57,76 @@
           }
         }
       }
+    },
+
+    "llama-ornith": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "NexusForge Ornith",
+      "options": {
+        "baseURL": "http://127.0.0.1:8080/v1"
+      },
+      "models": {
+        "ornith-1.5-9b-orchestrator": {
+          "name": "Ornith 1.5 9B Orchestrator",
+          "limit": {
+            "context": 131072,
+            "output": 8192
+          }
+        }
+      }
     }
   },
 
-  "model": "llama-main/qwen-local",
-  "agents": {
-    "coding-subagent": {
-      "autoStartOnRequest": true,
-      "cleanupMainAgentOnStart": true
+  "model": "llama-main/qwen3.5-9b-orchestrator",
+  "default_agent": "qwen-orchestrator",
+  "permission": {
+    "websearch": "allow",
+    "skill": {
+      "*": "allow"
+    }
+  },
+  "agent": {
+    "qwen-orchestrator": {
+      "description": "Default orchestrator for planning, delegation, integration, and review",
+      "mode": "primary",
+      "model": "llama-main/qwen3.5-9b-orchestrator",
+      "permission": {
+        "task": {
+          "*": "deny",
+          "granite-multi": "allow"
+        }
+      }
+    },
+    "ornith-orchestrator": {
+      "description": "Long-context orchestrator for repository-wide planning and difficult reasoning",
+      "mode": "primary",
+      "model": "llama-ornith/ornith-1.5-9b-orchestrator",
+      "permission": {
+        "task": {
+          "*": "deny",
+          "granite-multi": "allow"
+        }
+      }
+    },
+    "granite-orchestrator": {
+      "description": "Optional Granite 4.2 8B orchestrator for planning, integration, and review",
+      "mode": "primary",
+      "model": "llama-granite/granite-4.2-8b-orchestrator",
+      "permission": {
+        "task": {
+          "*": "deny",
+          "granite-multi": "allow"
+        }
+      }
+    },
+    "granite-multi": {
+      "description": "Implements one small, bounded task from a referenced Task Markdown file",
+      "mode": "subagent",
+      "model": "llama-granite/granite-4.2-3b-multi",
+      "prompt": "Work only on the assigned Task Markdown. Read it before acting, respect its owned paths and constraints, run its validation, and report changed files, checks, and blockers. Do not delegate further.",
+      "permission": {
+        "task": "deny"
+      }
     }
   }
 }
