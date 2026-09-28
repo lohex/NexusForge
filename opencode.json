@@ -3,15 +3,15 @@
   "provider": {
     "llama-main": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "NexusForge Main",
+      "name": "NexusForge Knowledge",
       "options": {
         "baseURL": "http://127.0.0.1:8080/v1"
       },
       "models": {
         "qwen3.5-9b-orchestrator": {
-          "name": "Qwen3.5 9B Orchestrator",
+          "name": "Qwen3.5 9B Knowledge",
           "limit": {
-            "context": 16384,
+            "context": 32768,
             "output": 4096
           }
         }
@@ -74,28 +74,105 @@
           }
         }
       }
+    },
+
+    "llama-bonsai": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "NexusForge Bonsai 2",
+      "options": {
+        "baseURL": "http://127.0.0.1:8080/v1"
+      },
+      "models": {
+        "bonsai-2-27b-ternary": {
+          "name": "Bonsai 2 27B Ternary",
+          "limit": {
+            "context": 32768,
+            "output": 4096
+          }
+        }
+      }
+    },
+
+    "llama-vision": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "NexusForge Vision",
+      "options": {
+        "baseURL": "http://127.0.0.1:8080/v1"
+      },
+      "models": {
+        "qwen3-vl-4b-instruct": {
+          "name": "Qwen3-VL 4B Vision",
+          "attachment": true,
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          },
+          "limit": {
+            "context": 32768,
+            "output": 4096
+          }
+        }
+      }
     }
   },
 
-  "model": "llama-main/qwen3.5-9b-orchestrator",
-  "default_agent": "qwen-orchestrator",
+  "model": "llama-ornith/ornith-1.5-9b-orchestrator",
+  "default_agent": "ornith-orchestrator",
+  "lsp": {
+    "bash": {
+      "command": [
+        "bash-language-server",
+        "start"
+      ],
+      "extensions": [
+        ".sh",
+        ".bash"
+      ]
+    },
+    "pyright": {
+      "command": [
+        "pyright-langserver",
+        "--stdio"
+      ],
+      "extensions": [
+        ".py",
+        ".pyi"
+      ]
+    },
+    "typescript": {
+      "command": [
+        "typescript-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".mts",
+        ".cts"
+      ]
+    }
+  },
   "permission": {
+    "lsp": "allow",
     "websearch": "allow",
     "skill": {
       "*": "allow"
     }
   },
   "agent": {
-    "qwen-orchestrator": {
-      "description": "Default orchestrator for planning, delegation, integration, and review",
-      "mode": "primary",
+    "qwen-knowledge": {
+      "description": "Answers focused knowledge and research questions and writes findings to files when requested",
+      "mode": "subagent",
       "model": "llama-main/qwen3.5-9b-orchestrator",
+      "prompt": "Answer the focused knowledge question from the parent with concise reasoning, useful evidence and explicit uncertainty. You may read relevant sources, use web search when needed, and create or edit files, including Markdown documents, as requested by the parent. Do not run shell commands, delegate, or take over orchestration.",
       "permission": {
-        "task": {
-          "*": "deny",
-          "granite-multi": "allow",
-          "long-context": "allow"
-        }
+        "edit": "allow",
+        "bash": "deny",
+        "task": "deny"
       }
     },
     "ornith-orchestrator": {
@@ -106,10 +183,39 @@
         "task": {
           "*": "deny",
           "granite-multi": "allow",
+          "granite-implementer": "allow",
+          "granite-spec-tester": "allow",
+          "granite-verifier": "allow",
+          "ornith-series-implementer": "allow",
+          "ornith-series-spec-tester": "allow",
+          "ornith-series-verifier": "allow",
+          "qwen-knowledge": "allow",
+          "qwen-vision": "allow",
           "long-context": "allow"
         }
       }
     },
+    "bonsai-orchestrator": {
+      "description": "Bonsai 2 27B orchestrator for planning, implementation, integration, and review",
+      "mode": "primary",
+      "model": "llama-bonsai/bonsai-2-27b-ternary",
+      "permission": {
+        "task": {
+          "*": "deny",
+          "granite-multi": "allow",
+          "granite-implementer": "allow",
+          "granite-spec-tester": "allow",
+          "granite-verifier": "allow",
+          "ornith-series-implementer": "allow",
+          "ornith-series-spec-tester": "allow",
+          "ornith-series-verifier": "allow",
+          "qwen-knowledge": "allow",
+          "qwen-vision": "allow",
+          "long-context": "allow"
+        }
+      }
+    },
+
     "granite-orchestrator": {
       "description": "Optional Granite 4.2 8B orchestrator for planning, integration, and review",
       "mode": "primary",
@@ -118,6 +224,14 @@
         "task": {
           "*": "deny",
           "granite-multi": "allow",
+          "granite-implementer": "allow",
+          "granite-spec-tester": "allow",
+          "granite-verifier": "allow",
+          "ornith-series-implementer": "allow",
+          "ornith-series-spec-tester": "allow",
+          "ornith-series-verifier": "allow",
+          "qwen-knowledge": "allow",
+          "qwen-vision": "allow",
           "long-context": "allow"
         }
       }
@@ -131,16 +245,68 @@
         "task": "deny"
       }
     },
+    "granite-implementer": {
+      "description": "Implements one bounded Task-Series implementation stage",
+      "mode": "subagent",
+      "model": "llama-granite/granite-4.2-3b-multi",
+      "prompt": "Read the assigned Task Markdown and plan. Implement only the declared implementation paths. Do not edit tests, delegate, or redesign the task. Return a concise stage report.",
+      "permission": { "task": "deny" }
+    },
+    "granite-spec-tester": {
+      "description": "Writes black-box tests from a Task-Series specification",
+      "mode": "subagent",
+      "model": "llama-granite/granite-4.2-3b-multi",
+      "prompt": "Read the assigned Task Markdown and plan. Derive tests only from the observable contract and allowed references. Do not read or execute implementation paths, delegate, or edit production files.",
+      "permission": { "task": "deny", "bash": "deny" }
+    },
+    "granite-verifier": {
+      "description": "Verifies a Task-Series implementation and tests",
+      "mode": "subagent",
+      "model": "llama-granite/granite-4.2-3b-multi",
+      "prompt": "Read the assigned Task Markdown, implementation and tests. Run the declared verification commands, edit no implementation or test files, and return JSON verification output only.",
+      "permission": { "task": "deny" }
+    },
+    "ornith-series-implementer": {
+      "description": "Implements one complex bounded Task-Series stage with Ornith",
+      "mode": "subagent",
+      "model": "llama-ornith/ornith-1.5-9b-orchestrator",
+      "prompt": "Read the assigned Task Markdown and plan. Implement only the declared implementation paths. Do not make architecture decisions, edit tests, delegate, or redesign the task. Return a concise stage report.",
+      "permission": { "task": "deny" }
+    },
+    "ornith-series-spec-tester": {
+      "description": "Writes independent black-box tests with Ornith",
+      "mode": "subagent",
+      "model": "llama-ornith/ornith-1.5-9b-orchestrator",
+      "prompt": "Read the assigned Task Markdown and plan. Derive tests only from the observable contract and allowed references. Do not read or execute implementation paths, delegate, or edit production files.",
+      "permission": { "task": "deny", "bash": "deny" }
+    },
+    "ornith-series-verifier": {
+      "description": "Verifies one complex Task-Series with Ornith",
+      "mode": "subagent",
+      "model": "llama-ornith/ornith-1.5-9b-orchestrator",
+      "prompt": "Read the assigned Task Markdown, implementation and tests. Run the declared verification commands, edit no implementation or test files, and return JSON verification output only.",
+      "permission": { "task": "deny" }
+    },
+    "qwen-vision": {
+      "description": "Analyzes images and screenshots and returns focused visual findings",
+      "mode": "subagent",
+      "model": "llama-vision/qwen3-vl-4b-instruct",
+      "prompt": "Analyze only the images, screenshots, or visual documents identified by the parent. Describe relevant visual evidence, answer the stated question, distinguish observation from inference, and report unreadable or uncertain details. Do not edit files, run shell commands, delegate, or make final orchestration decisions.",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny"
+      }
+    },
     "long-context": {
       "description": "Reads one oversized source and returns focused findings with evidence locations",
       "mode": "subagent",
       "model": "llama-long/qwen3.5-4b-long-context",
-      "prompt": "Read only the source identified in the assigned prompt and extract the requested information with useful headings, page numbers, or line numbers. Report findings, uncertainties, missing information, and blockers. Do not edit files, perform final synthesis, delegate, or call switch_model.",
+      "prompt": "Read only the source identified in the assigned prompt and extract the requested information with useful headings, page numbers, or line numbers. Report findings, uncertainties, missing information, and blockers. Do not edit files, perform final synthesis, or delegate.",
       "permission": {
         "edit": "deny",
         "bash": "deny",
-        "task": "deny",
-        "switch_model": "deny"
+        "task": "deny"
       }
     }
   }

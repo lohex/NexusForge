@@ -1,6 +1,6 @@
 ---
 name: orchestrator
-description: Plan and coordinate non-trivial implementation work with a local orchestrator model. Create a durable implementation-plan Markdown file, split independent small work into precise Task Markdown files, delegate those files directly to Granite multi subagents while preserving the primary orchestrator model, then review and integrate the results.
+description: Explicitly requested planning and delegation workflow for non-trivial implementation work. Create a durable implementation-plan Markdown file, split independent small work into precise Task Markdown files, fan those files out to Granite multi subagents while preserving the primary orchestrator model, then review and integrate the results. Do not activate automatically.
 metadata:
   workflow: local-multi-agent
   artifacts: markdown
@@ -8,10 +8,11 @@ metadata:
 
 # Orchestrator Workflow
 
-Use this skill for implementation work that benefits from an explicit design or
-from multiple independent implementation tasks. The orchestrator owns the
-architecture, interfaces, task boundaries, integration, and final validation.
-Do not delegate a task merely to create parallel work.
+Use this skill only when the user explicitly asks for the `orchestrator` skill
+or explicitly requests this plan-and-Granite delegation workflow. Do not select
+it automatically merely because implementation work could be parallelized. The
+orchestrator owns the architecture, interfaces, task boundaries, integration,
+and final validation. Do not delegate a task merely to create parallel work.
 
 This workflow requires the NexusForge llama.cpp router and the configured
 `granite-multi` subagent. The primary session remains on its current
@@ -89,36 +90,49 @@ subagent to infer requirements that the orchestrator can state explicitly. If
 the objective cannot be explained precisely in one bounded Task Markdown, split
 it again before dispatching it.
 
-## 4. Emit Task calls, then let the router load Granite
+## 4. Fan out one ready task layer with `multi_task`
 
-While the primary orchestrator model is still active, emit one Task tool call for
-each ready Task Markdown:
+Once one to three Task Markdown files in the same dependency layer are ready,
+invoke the `multi_task` tool exactly once. Pass each file as one item:
 
-`Task(subagent_type="granite-multi", ...)`
+```text
+multi_task({
+  tasks: [
+    { task_file: "plans/<slug>/tasks/T01-<slug>.md", description: "..." },
+    { task_file: "plans/<slug>/tasks/T02-<slug>.md", description: "..." }
+  ]
+})
+```
 
-For dependency-free tasks, emit all independent Task calls in the same assistant
-turn, up to the three Granite server slots. This is the last action the primary
-model takes before OpenCode starts the child work; do not wait for one independent
-task to finish before emitting the others.
+Include only tasks that are mutually independent, have disjoint owned paths, and
+have all prerequisites satisfied. The plugin accepts at most three tasks because
+the Granite server has three slots. If more tasks are ready, dispatch them in
+dependency-aware batches of at most three and review each returned batch before
+starting another. Do not make multiple `multi_task` calls in the same assistant
+turn.
 
-The dispatch prompt must name exactly one Task Markdown path and tell the
-subagent to read that file and its linked implementation plan before acting.
-Do not duplicate or weaken the Task Markdown requirements in the prompt.
+`multi_task` validates the repository-relative Task Markdown paths, obtains the
+same `task` permission used for `granite-multi`, creates one child session per
+file, and starts all child prompts concurrently. Every child is fixed to the
+configured `granite-multi` agent and
+`llama-granite/granite-4.2-3b-multi`; the caller cannot select another agent or
+model. The plugin waits for the whole batch and returns the reports and child
+session IDs together. Do not use OpenCode's background-task mode for this
+workflow.
 
-After the primary model has emitted the Task calls, OpenCode executes them and
-creates a child session for each call. Each child uses the model configured on
-the selected subagent, so its first inference requests
-`llama-granite/granite-4.2-3b-multi`. At that point the one-model-at-a-time router
-unloads the physically active orchestrator model and loads Granite. The primary
-session itself is only waiting for tool results: its agent and configured model
-do not change, and it cannot perform model inference concurrently with Granite.
+After the primary model emits the single `multi_task` call, it is waiting for
+the tool result and performs no model inference. The three child requests cause
+the one-model-at-a-time router to unload the physically active orchestrator
+model and load Granite once. `parallel = 3` lets those child requests occupy
+three Granite slots; it does not create tasks by itself. The primary session's
+agent and configured model never change.
 
-The Granite child sessions can use the three Granite slots concurrently. After
-all Task results for the turn have returned, OpenCode resumes the unchanged
-primary session. Its next inference still requests the original orchestrator
-model, causing the router to unload Granite and reload that model automatically.
-Do not call `switch_model` before or after Granite delegation; the router swaps
-the physically loaded model in response to child and parent inference requests.
+After all child results have returned, `multi_task` produces one combined tool
+result and OpenCode resumes the unchanged primary session. Its next inference
+still requests the original orchestrator model, causing the router to unload
+Granite and reload that model automatically. Keep the primary model unchanged before
+and after Granite delegation; the router swaps the physically loaded model in
+response to child and parent inference requests.
 
 Run dependent tasks only after their prerequisites have returned and the primary
 orchestrator has been reloaded to review them.

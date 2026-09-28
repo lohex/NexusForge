@@ -10,15 +10,20 @@ primary orchestrator owns the question, interpretation, synthesis, and final
 answer. The weaker long-context subagent is a focused reader: give it one precise
 information need, not an open-ended research or implementation task.
 
-The canonical model check is `serving/serve_qwen_long_context.sh --check`. It
-validates the model, configuration, and llama-server without starting the
-standalone server that would conflict with the NexusForge router on port 8080.
+The canonical model check is
+`"${NEXUSFORGE_HOME}/serving/serve_qwen_long_context.sh" --check`. The
+NexusForge wrapper exports `NEXUSFORGE_HOME`, so this remains valid when the
+active worktree is a different repository. The check validates the model,
+configuration, and llama-server without starting the standalone server that
+would conflict with the NexusForge router on port 8080.
 
 ## Workflow
 
-1. Resolve the repository root and run
-   `serving/serve_qwen_long_context.sh --check`. Stop and report the error if the
-   check fails. Do not start the standalone server in a router-backed session.
+1. Require `NEXUSFORGE_HOME` and run
+   `"${NEXUSFORGE_HOME}/serving/serve_qwen_long_context.sh" --check`. Stop and
+   report the error if the variable is unavailable or the check fails. Do not
+   resolve this launcher relative to the active worktree, and do not start the
+   standalone server in a router-backed session.
 2. Make the source accessible to the child by a concrete file path, URL, or other
    stable identifier. Do not paste the entire oversized source into the Task
    prompt when the child can read it directly.
@@ -44,6 +49,6 @@ standalone server that would conflict with the NexusForge router on port 8080.
    gaps with another narrowly scoped Task if necessary, and produce the final
    synthesis in the primary orchestrator.
 
-Do not call `switch_model` before or after delegation. The Task child selects its
+Keep the primary model unchanged before and after delegation. The Task child selects its
 configured model, and the router performs physical model loading in response to
 the child and parent inference requests.

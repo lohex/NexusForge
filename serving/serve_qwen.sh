@@ -8,9 +8,9 @@ MODEL="${PROJECT_HOME}/models/qwen/Qwen3.5-9B-Q4_K_M.gguf"
 
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8080}"
-CTX_SIZE="${CTX_SIZE:-16384}"
-CACHE_TYPE_K="${CACHE_TYPE_K:-q8_0}"
-CACHE_TYPE_V="${CACHE_TYPE_V:-q8_0}"
+CTX_SIZE="${CTX_SIZE:-32768}"
+CACHE_TYPE_K="${CACHE_TYPE_K:-q4_0}"
+CACHE_TYPE_V="${CACHE_TYPE_V:-q4_0}"
 SERVER_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -21,18 +21,26 @@ while [[ $# -gt 0 ]]; do
             CACHE_TYPE_V=q4_0
             shift
             ;;
+        --16k|--ctx16k|--context-16k)
+            CTX_SIZE=16384
+            CACHE_TYPE_K=q8_0
+            CACHE_TYPE_V=q8_0
+            shift
+            ;;
         -h|--help)
             cat <<'USAGE'
-Usage: serving/serve_qwen.sh [--32k] [llama-server args...]
+Usage: serving/serve_qwen.sh [--32k|--16k] [llama-server args...]
 
 Options:
   --32k, --ctx32k, --context-32k
-      Start Qwen3.5-9B with 32K context and q4_0 KV cache.
+      Start Qwen3.5-9B with the default 32K context and q4_0 KV cache.
+  --16k, --ctx16k, --context-16k
+      Start with the previous 16K context and q8_0 KV cache.
 
 Environment:
-  CTX_SIZE      Override context size manually. Default: 16384
-  CACHE_TYPE_K  Override K cache type manually. Default: q8_0
-  CACHE_TYPE_V  Override V cache type manually. Default: q8_0
+  CTX_SIZE      Override context size manually. Default: 32768
+  CACHE_TYPE_K  Override K cache type manually. Default: q4_0
+  CACHE_TYPE_V  Override V cache type manually. Default: q4_0
   HOST          Bind host. Default: 127.0.0.1
   PORT          Bind port. Default: 8080
 USAGE
@@ -61,8 +69,8 @@ echo "Starting Qwen3.5-9B orchestrator..."
 echo "Context: ${CTX_SIZE} tokens; one slot; ${CACHE_TYPE_K}/${CACHE_TYPE_V} KV cache"
 echo "API: http://${HOST}:${PORT}/v1"
 # Keep context in sync with qwen3.5-9b-orchestrator in opencode.json.
-# Q8 KV cache limits VRAM use at 16K context on the 8 GB GPU.
-# Use --32k to switch to 32K context with q4_0 KV cache for test runs.
+# The default uses 32K context with q4_0 KV cache; --16k restores the
+# previous q8_0 profile when memory or performance requires it.
 # Set QWEN_REASONING=off for faster visible answers without thinking.
 # Sampling uses Qwen's precise coding profile for thinking mode:
 # https://huggingface.co/Qwen/Qwen3.5-9B#best-practices
@@ -71,11 +79,12 @@ echo "API: http://${HOST}:${PORT}/v1"
 exec "${LLAMA_SERVER}" \
     -m "${MODEL}" \
     --alias qwen3.5-9b-orchestrator \
-    -ngl 999 \
     -c "${CTX_SIZE}" \
     -np 1 \
     -ctk "${CACHE_TYPE_K}" \
     -ctv "${CACHE_TYPE_V}" \
+    -fit on \
+    -fitt 512 \
     -fa on \
     --temp 0.6 \
     --top-p 0.95 \

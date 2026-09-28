@@ -12,7 +12,7 @@ test("long-context skill delegates to a child without switching the primary mode
   assert.match(skill, /Task\(subagent_type="long-context", \.\.\.\)/)
   assert.match(skill, /primary session keeps its original agent and\s+configured model/)
   assert.match(skill, /automatically reloads the original\s+orchestrator model/)
-  assert.match(skill, /Do not call `switch_model` before or after delegation/)
+  assert.match(skill, /Keep the primary model unchanged before and after delegation/)
   await assert.rejects(
     access(new URL(".opencode/skills/qwen-long-context/SKILL.md", root)),
     { code: "ENOENT" },
@@ -28,9 +28,8 @@ test("long-context agent is a read-only subagent available to every primary orch
   assert.equal(child.permission.edit, "deny")
   assert.equal(child.permission.bash, "deny")
   assert.equal(child.permission.task, "deny")
-  assert.equal(child.permission.switch_model, "deny")
 
-  for (const name of ["qwen-orchestrator", "ornith-orchestrator", "granite-orchestrator"]) {
+  for (const name of ["ornith-orchestrator", "granite-orchestrator"]) {
     assert.equal(config.agent[name].permission.task["long-context"], "allow")
   }
 })

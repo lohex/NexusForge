@@ -1,0 +1,17 @@
+--- a/tools/server/server-models.cpp
++++ b/tools/server/server-models.cpp
+@@ -82,6 +82,14 @@
+     // returns "" if no model can be given up
+     std::string pick_victim(std::unique_lock<std::mutex> & lk, const std::string & exclude) {
+         check_lock(lk);
++        // An eviction already promised to another waiter must finish first.
++        // Otherwise two requests can reserve the same victim before unload()
++        // changes its state, leaving the second slot_pending forever.
++        for (const auto & e : queue) {
++            if (e.slot_pending) {
++                return "";
++            }
++        }
+         std::string victim;
+         int64_t victim_last_used = 0;
+         for (const auto & m : models.mapping) {
